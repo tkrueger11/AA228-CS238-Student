@@ -1,0 +1,11 @@
+Dataset,Value,Method,Pass
+small,33.35,Q-learning,0
+small,33.03,SARSA,0
+small,3.94,Q-lambda,0
+small,35.51,Model-based,1
+medium,-0.53,Q-learning,0
+medium,-65.52,SARSA,0
+medium,-71.06,Q-lambda,0
+large,263.44,Q-learning,1
+large,241.195.43,SARSA,0
+large,0.82,Q-lambda,0
