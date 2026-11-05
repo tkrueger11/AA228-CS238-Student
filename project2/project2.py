@@ -7,13 +7,9 @@ import time
 
 TRACKING = 1
 
-def unravel_coordinate(ravelled: int) -> tuple[int, int]:
-    return np.unravel_index(ravelled, (100, 500))
-
 class Defaults:
     LEARNING_RATE = 0.1
     DISCOUNT_FACTOR = 0.95
-    EXPONENTIAL_DECAY = 0.95
     CONVERGENCE_LIMIT = 0
     UNSTYLE_STATE = lambda s: s - 1
     STYLE_ACTION = lambda a: a + 1
@@ -142,7 +138,10 @@ class SweepableMaxLikelihoodMDP(ReinforcementLearning):
         R = self.Rho[state] / n
 
         Q = R + self.discount_factor * (T @ self.U)
-        Q[self.N_sa[state] == math.inf] = -math.inf
+        Q[self.N_sa[state] == 0] = -math.inf
+
+        U = np.max(Q)
+        U = 0 if math.isinf(U) else U
 
         self.policy[state] = np.argmax(Q)
         self.U[state] = np.max(Q)
@@ -184,7 +183,7 @@ class SweepableMaxLikelihoodMDP(ReinforcementLearning):
 
             priority, state_p = heapq.heappop_max(self.priority_queue)
 
-            if (state_p in self.priority_cache) and (self.priority_cache[state_p] == priority or (math.isinf(self.priority_cache[state_p]) and math.isinf(priority))):
+            if state_p in self.priority_cache and self.priority_cache[state_p] == priority:
                 iterations -= 1
                 del self.priority_cache[state_p]
                 self.run_sweep(state_p)
@@ -243,51 +242,6 @@ class SARSA(ReinforcementLearning):
 
             self.update(state, action, reward, next_state, next_action)
 
-class LinearFunctionApproximation(ReinforcementLearning):
-    def __init__(self, discount_factor: float, learning_rate: float, init_theta: np.ndarray, n_states: int, n_actions: int, unstyle_state: Callable[[Any], int], style_action: Callable[[int], Any], unstyle_action: Callable[[Any], int], col_types: list[str]):
-        super().__init__(discount_factor, n_states, unstyle_state, style_action, unstyle_action, col_types)
-        self.n_actions = n_actions
-        self.learning_rate = learning_rate
-        self.theta = init_theta
-
-    def Basis(self, state: tuple[int,int], action: int) -> np.ndarray:
-        pos, vel = state
-
-        max_exp = 8
-
-        i, j = np.indices((max_exp + 1, max_exp + 1))
-        mask = i + j <= max_exp
-
-        state_features = (pos ** i * vel ** j)[mask]
-        n_state_features = np.size(state_features)
-
-        features = np.zeros(self.n_actions * n_state_features)
-        start_idx = action * n_state_features
-        end_idx = start_idx + n_state_features
-        features[start_idx:end_idx] = state_features
-        return features
-
-    def Q(self, state: tuple[int,int], action: int) -> float:
-        B = self.Basis(state, action)
-        return self.theta.T @ B
-
-    def value(self, state: tuple[int,int]) -> int:
-        return max([ self.Q(state, action) for action in range(self.n_actions) ])
-    
-    def pi(self, state: tuple[int,int]) -> int:
-        coordinate = unravel_coordinate(state)
-        return np.argmax([ self.Q(coordinate, action) for action in range(self.n_actions) ])
-
-    def scaled_gradient(self, gradient_vector: np.ndarray, max: int) -> np.ndarray:
-        l2_norm = np.linalg.norm(gradient_vector)
-        if l2_norm == 0: return np.zeros(np.shape(gradient_vector))
-        return min(max / l2_norm, max) * gradient_vector
-
-    def update(self, state: tuple[int,int], action: int, reward: float, next_state: tuple[int,int]) -> None:
-        u = self.value(next_state)
-        grad = self.Basis(state, action)
-        delta = (reward + self.discount_factor * u - self.Q(state, action)) * grad
-        self.theta += self.learning_rate * self.scaled_gradient(delta, 1)
 
 def run_solveable_model_based(n_states: int, n_actions: int, learn_csv: str, export_path: str) -> None:
     agent = SolveableMaxLikelihoodMDP(
@@ -340,22 +294,6 @@ def run_sarsa_learning(n_states: int, n_actions: int, learn_csv: str, export_pat
         n_states=n_states, 
         n_actions=n_actions, 
         unstyle_state=Defaults.UNSTYLE_STATE,
-        style_action=Defaults.STYLE_ACTION, 
-        unstyle_action=Defaults.UNSTYLE_ACTION,
-        col_types=Defaults.COL_TYPES
-    )
-
-    agent.learn(learn_csv)
-    agent.export_policy(export_path)
-
-def run_linear_fn_approx(n_states: int, n_actions: int, learn_csv: str, export_path: str, init_theta: np.ndarray, learning_rate: float = Defaults.LEARNING_RATE, discount_factor: float = Defaults.DISCOUNT_FACTOR) -> None:
-    agent = LinearFunctionApproximation(
-        discount_factor=discount_factor, 
-        learning_rate=learning_rate, 
-        init_theta=init_theta,
-        n_states=n_states, 
-        n_actions=n_actions, 
-        unstyle_state=unravel_coordinate,
         style_action=Defaults.STYLE_ACTION, 
         unstyle_action=Defaults.UNSTYLE_ACTION,
         col_types=Defaults.COL_TYPES
